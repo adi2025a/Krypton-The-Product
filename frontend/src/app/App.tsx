@@ -63,6 +63,43 @@ interface PricePoint {
   volume: number;
 }
 
+interface Credentials {
+  provider: string;
+  model: string;
+  apiKey: string;
+}
+
+// ==================== API CONFIG ====================
+
+// Point this at your running FastAPI backend (see krypton-backend/README.md).
+// Override at build time with VITE_API_BASE_URL if your setup uses Vite envs.
+const API_BASE_URL: string =
+  (typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_API_BASE_URL) ||
+  "http://localhost:8000";
+
+const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
+
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch {
+      // ignore parse errors, fall back to statusText
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 // ==================== STATIC DATA ====================
 
 const LLM_PROVIDERS: LLMProvider[] = [
@@ -144,11 +181,6 @@ const FEATURES = [
 const TRADING_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "MATIC/USDT"];
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
 
-const BASE_PRICES: Record<string, number> = {
-  "BTC/USDT": 68120, "ETH/USDT": 3640, "SOL/USDT": 182,
-  "BNB/USDT": 615, "XRP/USDT": 0.62, "MATIC/USDT": 0.95,
-};
-
 const INITIAL_MESSAGES: Message[] = [
   {
     id: "1",
@@ -158,117 +190,9 @@ const INITIAL_MESSAGES: Message[] = [
   },
 ];
 
-const MOCK_NEWS: NewsItem[] = [
-  {
-    id: "1",
-    headline: "Bitcoin ETF inflows hit $1.2B as institutional demand surges",
-    source: "CoinDesk",
-    time: "2m ago",
-    summary: "Spot Bitcoin ETFs recorded their largest single-day inflow since launch, driven by BlackRock and Fidelity products. Analysts attribute the surge to macro tailwinds and growing institutional allocation strategies.",
-    sentiment: "bullish",
-    sentimentScore: 82,
-  },
-  {
-    id: "2",
-    headline: "Fed signals potential rate cut in Q3, risk assets rally across the board",
-    source: "Reuters",
-    time: "8m ago",
-    summary: "Federal Reserve minutes revealed growing consensus among board members for a rate reduction cycle beginning in Q3 2026. Crypto markets responded positively with BTC gaining 3.2% in the hour following the release.",
-    sentiment: "bullish",
-    sentimentScore: 74,
-  },
-  {
-    id: "3",
-    headline: "Ethereum gas fees spike amid high-profile DeFi protocol launch",
-    source: "The Block",
-    time: "15m ago",
-    summary: "A major DeFi protocol launch on Ethereum mainnet caused average gas fees to spike to 45 gwei. The congestion is expected to normalize within 2-4 hours as the initial launch excitement subsides.",
-    sentiment: "neutral",
-    sentimentScore: 48,
-  },
-  {
-    id: "4",
-    headline: "Binance faces regulatory scrutiny in three new jurisdictions",
-    source: "Bloomberg",
-    time: "32m ago",
-    summary: "Regulatory bodies in Singapore, UAE, and France have opened preliminary inquiries into Binance compliance practices. The exchange confirmed it is cooperating fully and expects the reviews to conclude favorably.",
-    sentiment: "bearish",
-    sentimentScore: 28,
-  },
-  {
-    id: "5",
-    headline: "Solana network processes record 65k TPS in coordinated stress test",
-    source: "Decrypt",
-    time: "1h ago",
-    summary: "Solana validators completed a stress test achieving 65,000 transactions per second with 99.8% uptime. The milestone positions Solana as a leading candidate for enterprise-grade blockchain adoption.",
-    sentiment: "bullish",
-    sentimentScore: 79,
-  },
-];
-
-const INITIAL_AGENTS: AgentTask[] = [
-  {
-    id: "1",
-    agentName: "MarketScanner",
-    status: "completed",
-    task: "Scan BTC/USDT for breakout patterns on 4H",
-    result: "Identified ascending triangle. Resistance at $68,400. Volume confirmation required for entry.",
-    timestamp: "09:38",
-    duration: "2.1s",
-  },
-  {
-    id: "2",
-    agentName: "SentimentAgent",
-    status: "completed",
-    task: "Aggregate news sentiment — last 2 hours",
-    result: "Overall: BULLISH (71/100). 14 bullish vs 3 bearish articles. Key driver: ETF inflows.",
-    timestamp: "09:39",
-    duration: "3.4s",
-  },
-  {
-    id: "3",
-    agentName: "RiskAnalyzer",
-    status: "running",
-    task: "Calculate portfolio exposure across open positions",
-    result: null,
-    timestamp: "09:41",
-    duration: null,
-  },
-  {
-    id: "4",
-    agentName: "OnChainAgent",
-    status: "pending",
-    task: "Monitor whale wallet movements — BTC top 100",
-    result: null,
-    timestamp: "09:41",
-    duration: null,
-  },
-];
-
-const ASSISTANT_REPLIES = [
-  "Based on current conditions, BTC is consolidating near $68,000 support. RSI on the 4H is at 52 — neither overbought nor oversold. Watch for a breakout above $68,500 with volume confirmation before taking a position.",
-  "The sentiment data from the last 2 hours shows a bullish bias (score: 74/100). Key driver is ETF inflow data. However, the funding rate on perpetuals is slightly elevated at 0.012%, which could indicate overleveraged longs — be cautious on aggressive entries.",
-  "For ETH/USDT, the gas fee spike is likely temporary, driven by the new DeFi launch. Once congestion normalizes, ETH typically sees renewed buying interest. The ETH/BTC ratio is holding 0.0534 support — a constructive sign.",
-  "Looking at on-chain data, exchange reserves for BTC have declined for 6 consecutive days — a historically bullish signal indicating accumulation. Combined with ETF inflows, the medium-term bias remains constructive, though short-term volatility should be expected.",
-];
+const AGENT_ORDER = ["MarketScanner", "SentimentAgent", "RiskAnalyzer", "OnChainAgent"];
 
 // ==================== UTILITIES ====================
-
-function generatePriceData(basePrice: number, points: number): PricePoint[] {
-  let price = basePrice;
-  return Array.from({ length: points }, (_, i) => {
-    const noise = (Math.random() - 0.47) * 0.018;
-    price = price * (1 + noise);
-    const totalMin = i * 15;
-    const hour = Math.floor(totalMin / 60) + 9;
-    const min = totalMin % 60;
-    return {
-      time: `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`,
-      price: parseFloat(price.toFixed(2)),
-      volume: Math.floor(Math.random() * 800 + 200),
-    };
-  });
-}
 
 function formatPrice(price: number): string {
   if (price >= 1000) return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -373,7 +297,6 @@ function LandingNav({ onLogin, onSignup }: { onLogin: () => void; onSignup: () =
 function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () => void }) {
   return (
     <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
-      {/* Subtle grid */}
       <div
         className="absolute inset-0 opacity-[0.025]"
         style={{
@@ -381,7 +304,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
           backgroundSize: "64px 64px",
         }}
       />
-      {/* Center glow */}
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full pointer-events-none"
         style={{ background: "radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%)" }}
@@ -445,7 +367,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
           </div>
         </div>
 
-        {/* Hero preview card */}
         <div className="relative hidden md:block">
           <div className="rounded-xl border border-border overflow-hidden shadow-2xl" style={{ background: "#0D1117" }}>
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
@@ -461,7 +382,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
               </div>
             </div>
             <div className="p-4 space-y-4">
-              {/* AI Message */}
               <div className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold" style={{ background: "linear-gradient(135deg, #00D4FF 0%, #6366F1 100%)", color: "#080B12" }}>K</div>
                 <div className="flex-1 p-3 rounded-lg border border-border/50 text-xs text-foreground/80 leading-relaxed" style={{ background: "#080B12" }}>
@@ -469,7 +389,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
                 </div>
               </div>
 
-              {/* Mini price tickers */}
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { pair: "BTC/USDT", price: "$68,120", change: "+2.4%", up: true },
@@ -484,7 +403,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
                 ))}
               </div>
 
-              {/* Agent feed preview */}
               <div className="space-y-1.5">
                 {[
                   { name: "MarketScanner", status: "Analysis complete", done: true },
@@ -502,7 +420,6 @@ function HeroSection({ onSignup, onLogin }: { onSignup: () => void; onLogin: () 
             </div>
           </div>
 
-          {/* Glow ring */}
           <div
             className="absolute -inset-px rounded-xl pointer-events-none opacity-20"
             style={{ background: "linear-gradient(135deg, #00D4FF, #6366F1)", WebkitMask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)", WebkitMaskComposite: "xor", padding: "1px" }}
@@ -641,7 +558,7 @@ function AuthPage({
 }: {
   mode: "login" | "signup";
   onToggle: () => void;
-  onSuccess: () => void;
+  onSuccess: (token: string) => void;
   onBack: () => void;
 }) {
   const [email, setEmail] = useState("");
@@ -653,14 +570,23 @@ function AuthPage({
 
   const isLogin = mode === "login";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const path = isLogin ? "/api/auth/login" : "/api/auth/signup";
+      const body = isLogin ? { email, password } : { name, email, password };
+      const data = await apiFetch<{ access_token: string }>(path, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      onSuccess(data.access_token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
-      onSuccess();
-    }, 1200);
+    }
   };
 
   return (
@@ -794,7 +720,7 @@ function AuthPage({
 
 // ==================== DASHBOARD PAGE ====================
 
-function DashboardPage({ onContinue }: { onContinue: () => void }) {
+function DashboardPage({ onContinue }: { onContinue: (creds: Credentials) => void }) {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -810,6 +736,13 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
     if (step === 2) return !!selectedProvider;
     if (step === 3) return !!(selectedProvider && apiKey.trim().length > 10);
     return false;
+  };
+
+  const handleContinue = () => {
+    if (!canContinue || !selectedProvider) return;
+    // The key is only ever kept in-memory in React state and sent per-request
+    // to the backend — it is never written to localStorage or a database.
+    onContinue({ provider: selectedProvider, model: selectedModel, apiKey: apiKey.trim() });
   };
 
   return (
@@ -833,11 +766,11 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
             Welcome to Krypton
           </h1>
           <p className="text-muted-foreground max-w-xl">
-            Connect your preferred AI provider to get started. Your API key is encrypted locally and never stored on our servers.
+            Connect your preferred AI provider to get started. Your API key is kept in memory for this
+            session only and sent directly to your own Krypton backend with each request — it's never stored.
           </p>
         </div>
 
-        {/* Step 1 — Provider */}
         <div className="mb-10">
           <div className="flex items-center gap-3 mb-5">
             <div
@@ -873,7 +806,6 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
           </div>
         </div>
 
-        {/* Step 2 — API Key */}
         <div className={`mb-10 transition-opacity ${stepActive(2) ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
           <div className="flex items-center gap-3 mb-5">
             <div
@@ -889,7 +821,7 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
           <div className="rounded-xl border border-border p-6" style={{ background: "#0D1117" }}>
             <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground" style={{ fontFamily: "JetBrains Mono, monospace" }}>
               <Lock className="w-3.5 h-3.5 text-emerald-400" />
-              Encrypted locally · Never transmitted to our servers
+              Held in memory this session only · Sent directly to your backend, never persisted
             </div>
             <div className="relative">
               <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -919,7 +851,6 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
           </div>
         </div>
 
-        {/* Step 3 — Model */}
         <div className={`mb-10 transition-opacity ${stepActive(3) ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
           <div className="flex items-center gap-3 mb-5">
             <div
@@ -962,7 +893,7 @@ function DashboardPage({ onContinue }: { onContinue: () => void }) {
         </div>
 
         <button
-          onClick={onContinue}
+          onClick={handleContinue}
           disabled={!canContinue}
           className="w-full py-4 rounded-xl font-semibold transition-all hover:opacity-90 disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           style={{ background: "linear-gradient(135deg, #00D4FF 0%, #6366F1 100%)", color: "#080B12", fontFamily: "Outfit, sans-serif" }}
@@ -1010,11 +941,12 @@ function WorkspaceTopNav({ onBack }: { onBack: () => void }) {
   );
 }
 
-// --- Chat ---
-function ChatSection() {
+// --- Chat --- (now calls POST /api/chat, routed through the LangGraph multi-agent graph)
+function ChatSection({ credentials, activePair }: { credentials: Credentials; activePair: string }) {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1022,7 +954,7 @@ function ChatSection() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!input.trim() || isTyping) return;
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -1030,20 +962,42 @@ function ChatSection() {
       content: input.trim(),
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     setInput("");
+    setError(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setIsTyping(true);
-    setTimeout(() => {
+
+    try {
+      const data = await apiFetch<{ id: string; content: string; timestamp: string; routed_agent?: string }>(
+        "/api/chat",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            message: userMsg.content,
+            history: nextMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+            context_pair: activePair,
+            credentials: {
+              provider: credentials.provider,
+              model: credentials.model,
+              api_key: credentials.apiKey,
+            },
+          }),
+        }
+      );
       const reply: Message = {
-        id: (Date.now() + 1).toString(),
+        id: data.id,
         role: "assistant",
-        content: ASSISTANT_REPLIES[Math.floor(Math.random() * ASSISTANT_REPLIES.length)],
-        timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+        content: data.content,
+        timestamp: data.timestamp,
       };
       setMessages((prev) => [...prev, reply]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reach the assistant.");
+    } finally {
       setIsTyping(false);
-    }, 1400 + Math.random() * 800);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1066,7 +1020,11 @@ function ChatSection() {
           <MessageSquare className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-semibold text-foreground">AI Chat</span>
         </div>
-        <button className="p-1.5 rounded hover:bg-muted/20 transition-colors" title="New conversation">
+        <button
+          className="p-1.5 rounded hover:bg-muted/20 transition-colors"
+          title="New conversation"
+          onClick={() => setMessages(INITIAL_MESSAGES)}
+        >
           <Plus className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </div>
@@ -1111,6 +1069,12 @@ function ChatSection() {
             </div>
           </div>
         )}
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/20 text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "#F87171" }}>
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            {error}
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -1146,29 +1110,43 @@ function ChatSection() {
   );
 }
 
-// --- Chart ---
-function ChartSection() {
-  const [pair, setPair] = useState("BTC/USDT");
+// --- Chart --- (now calls GET /api/market/prices, backed by Binance data)
+function ChartSection({ pair, onPairChange }: { pair: string; onPairChange: (p: string) => void }) {
   const [timeframe, setTimeframe] = useState("1h");
-  const [chartData, setChartData] = useState<PricePoint[]>(() => generatePriceData(68120, 48));
-  const [loading, setLoading] = useState(false);
+  const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const currentPrice = chartData[chartData.length - 1]?.price ?? 0;
   const startPrice = chartData[0]?.price ?? 0;
   const priceChange = currentPrice - startPrice;
-  const priceChangePct = ((priceChange / startPrice) * 100).toFixed(2);
+  const priceChangePct = startPrice ? ((priceChange / startPrice) * 100).toFixed(2) : "0.00";
   const isUp = priceChange >= 0;
 
-  const loadChart = (newPair: string, newTf: string) => {
+  const loadChart = async (p: string, tf: string) => {
     setLoading(true);
-    setTimeout(() => {
-      setChartData(generatePriceData(BASE_PRICES[newPair] ?? 100, 48));
+    setError(null);
+    try {
+      const data = await apiFetch<{ points: PricePoint[] }>(
+        `/api/market/prices?pair=${encodeURIComponent(p)}&timeframe=${encodeURIComponent(tf)}`
+      );
+      setChartData(data.points);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load price data.");
+    } finally {
       setLoading(false);
-    }, 350);
+    }
   };
 
-  const switchPair = (p: string) => { setPair(p); loadChart(p, timeframe); };
-  const switchTf = (tf: string) => { setTimeframe(tf); loadChart(pair, tf); };
+  useEffect(() => {
+    loadChart(pair, timeframe);
+    const interval = setInterval(() => loadChart(pair, timeframe), 30000); // light polling refresh
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pair, timeframe]);
+
+  const switchPair = (p: string) => { onPairChange(p); };
+  const switchTf = (tf: string) => { setTimeframe(tf); };
 
   const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number; payload: PricePoint }> }) => {
     if (!active || !payload?.length) return null;
@@ -1242,6 +1220,12 @@ function ChartSection() {
           <div className="absolute inset-0 flex items-center justify-center">
             <Spinner />
           </div>
+        ) : error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+            <AlertCircle className="w-6 h-6 text-muted-foreground/40" />
+            <p className="text-xs text-muted-foreground">{error}</p>
+            <button onClick={() => loadChart(pair, timeframe)} className="text-xs" style={{ color: "#00D4FF" }}>Retry</button>
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
@@ -1278,18 +1262,35 @@ function ChartSection() {
           style={{ fontFamily: "JetBrains Mono, monospace" }}
         >
           <TrendingUp className="w-3 h-3" />
-          TradingView widget slot
+          Live · Binance
         </div>
       </div>
     </div>
   );
 }
 
-// --- News ---
+// --- News --- (now calls GET /api/news, backed by real RSS feeds + sentiment scoring)
 function NewsSection() {
-  const [news] = useState<NewsItem[]>(MOCK_NEWS);
+  const [news, setNews] = useState<NewsItem[]>([]);
   const [selected, setSelected] = useState<NewsItem | null>(null);
-  const [apiState] = useState<ApiState>("success");
+  const [apiState, setApiState] = useState<ApiState>("loading");
+
+  const loadNews = async () => {
+    setApiState("loading");
+    try {
+      const data = await apiFetch<{ items: NewsItem[] }>("/api/news?limit=12");
+      setNews(data.items);
+      setApiState(data.items.length ? "success" : "empty");
+    } catch {
+      setApiState("error");
+    }
+  };
+
+  useEffect(() => {
+    loadNews();
+    const interval = setInterval(loadNews, 60000); // refresh feed every minute
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex flex-col h-full border-l border-border overflow-hidden" style={{ background: "#080B12" }}>
@@ -1300,7 +1301,7 @@ function NewsSection() {
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <button className="p-1.5 rounded hover:bg-muted/20 transition-colors">
+          <button className="p-1.5 rounded hover:bg-muted/20 transition-colors" onClick={loadNews}>
             <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
         </div>
@@ -1314,7 +1315,7 @@ function NewsSection() {
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
           <AlertCircle className="w-8 h-8 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">Failed to load news</p>
-          <button className="text-xs text-primary hover:opacity-80 transition-opacity" style={{ color: "#00D4FF" }}>Retry</button>
+          <button className="text-xs text-primary hover:opacity-80 transition-opacity" style={{ color: "#00D4FF" }} onClick={loadNews}>Retry</button>
         </div>
       )}
 
@@ -1376,6 +1377,17 @@ function NewsSection() {
           <div className="p-3.5 rounded-xl border border-border" style={{ background: "#0D1117" }}>
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Summary</div>
             <p className="text-xs text-foreground/80 leading-relaxed">{selected.summary}</p>
+            {(selected as any).url && (
+              <a
+                href={(selected as any).url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] mt-3 hover:opacity-80"
+                style={{ color: "#00D4FF", fontFamily: "JetBrains Mono, monospace" }}
+              >
+                Read full article <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
           </div>
 
           <div className="p-3.5 rounded-xl border border-border" style={{ background: "#0D1117" }}>
@@ -1408,26 +1420,65 @@ function NewsSection() {
   );
 }
 
-// --- Agent Feed ---
-function AgentFeedSection() {
-  const [agents, setAgents] = useState<AgentTask[]>(INITIAL_AGENTS);
+// --- Agent Feed --- (now streams real runs over WS /ws/agents, driven by the LangGraph agents)
+function AgentFeedSection({ credentials, pair }: { credentials: Credentials; pair: string }) {
+  const [agents, setAgents] = useState<AgentTask[]>(
+    AGENT_ORDER.map((name, i) => ({
+      id: `pending-${i}`,
+      agentName: name,
+      status: "pending",
+      task: "Waiting to run...",
+      result: null,
+      timestamp: "--:--",
+      duration: null,
+    }))
+  );
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const runAgents = () => {
+    setConnectionError(null);
+    setAgents(AGENT_ORDER.map((name, i) => ({
+      id: `pending-${i}`,
+      agentName: name,
+      status: "pending",
+      task: "Waiting to run...",
+      result: null,
+      timestamp: "--:--",
+      duration: null,
+    })));
+
+    const ws = new WebSocket(`${WS_BASE_URL}/ws/agents`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        provider: credentials.provider,
+        model: credentials.model,
+        api_key: credentials.apiKey,
+        pair,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const update: AgentTask = JSON.parse(event.data);
+      setAgents((prev) => {
+        const idx = prev.findIndex((a) => a.agentName === update.agentName);
+        if (idx === -1) return [...prev, update];
+        const next = [...prev];
+        next[idx] = update;
+        return next;
+      });
+    };
+
+    ws.onerror = () => setConnectionError("Couldn't reach the agent feed — check the backend is running.");
+    ws.onclose = () => { wsRef.current = null; };
+  };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setAgents((prev) =>
-        prev.map((a) =>
-          a.id === "3"
-            ? {
-                ...a,
-                status: "completed" as const,
-                result: "Exposure: BTC 34.2%, ETH 18.7%, SOL 8.1%. Max drawdown risk: -12.4% at current implied volatility.",
-                duration: "5.2s",
-              }
-            : a
-        )
-      );
-    }, 4000);
-    return () => clearTimeout(timer);
+    runAgents();
+    return () => wsRef.current?.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -1438,15 +1489,22 @@ function AgentFeedSection() {
           <span className="text-sm font-semibold text-foreground">Agent Feed</span>
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         </div>
-        <button className="p-1.5 rounded hover:bg-muted/20 transition-colors" title="Run new agent">
+        <button className="p-1.5 rounded hover:bg-muted/20 transition-colors" title="Run agents again" onClick={runAgents}>
           <Plus className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </div>
 
+      {connectionError && (
+        <div className="m-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/20 text-xs" style={{ background: "rgba(239,68,68,0.08)", color: "#F87171" }}>
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          {connectionError}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ scrollbarWidth: "none" }}>
         {agents.map((agent) => (
           <div
-            key={agent.id}
+            key={agent.agentName}
             className="p-3 rounded-xl border transition-all duration-300"
             style={{
               background: "#0D1117",
@@ -1505,7 +1563,9 @@ function AgentFeedSection() {
   );
 }
 
-function WorkspacePage({ onBack }: { onBack: () => void }) {
+function WorkspacePage({ onBack, credentials }: { onBack: () => void; credentials: Credentials }) {
+  const [pair, setPair] = useState("BTC/USDT");
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden" style={{ fontFamily: "Inter, sans-serif" }}>
       <WorkspaceTopNav onBack={onBack} />
@@ -1514,12 +1574,12 @@ function WorkspacePage({ onBack }: { onBack: () => void }) {
         style={{ gridTemplateColumns: "300px 1fr 260px" }}
       >
         {/* Left: Chat (full height) */}
-        <ChatSection />
+        <ChatSection credentials={credentials} activePair={pair} />
 
         {/* Center: Chart top + Agent Feed bottom */}
         <div className="grid min-h-0" style={{ gridTemplateRows: "58% 42%" }}>
-          <ChartSection />
-          <AgentFeedSection />
+          <ChartSection pair={pair} onPairChange={setPair} />
+          <AgentFeedSection credentials={credentials} pair={pair} />
         </div>
 
         {/* Right: News (full height) */}
@@ -1533,6 +1593,8 @@ function WorkspacePage({ onBack }: { onBack: () => void }) {
 
 export default function App() {
   const [page, setPage] = useState<Page>("landing");
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<Credentials | null>(null);
 
   return (
     <div className="dark">
@@ -1546,7 +1608,7 @@ export default function App() {
         <AuthPage
           mode="login"
           onToggle={() => setPage("signup")}
-          onSuccess={() => setPage("dashboard")}
+          onSuccess={(token) => { setAuthToken(token); setPage("dashboard"); }}
           onBack={() => setPage("landing")}
         />
       )}
@@ -1554,15 +1616,15 @@ export default function App() {
         <AuthPage
           mode="signup"
           onToggle={() => setPage("login")}
-          onSuccess={() => setPage("dashboard")}
+          onSuccess={(token) => { setAuthToken(token); setPage("dashboard"); }}
           onBack={() => setPage("landing")}
         />
       )}
       {page === "dashboard" && (
-        <DashboardPage onContinue={() => setPage("workspace")} />
+        <DashboardPage onContinue={(creds) => { setCredentials(creds); setPage("workspace"); }} />
       )}
-      {page === "workspace" && (
-        <WorkspacePage onBack={() => setPage("dashboard")} />
+      {page === "workspace" && credentials && (
+        <WorkspacePage onBack={() => setPage("dashboard")} credentials={credentials} />
       )}
     </div>
   );
