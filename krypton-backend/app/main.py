@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app.routers import agents_router, auth_router, binance_router, chat_router, market_router, news_router
+from app.core.config import settings
 
-app = FastAPI(title="Krypton API", version="1.0.0")
+app = FastAPI(title=settings.APP_NAME, version="1.0.0")
 
 # In production, restrict this to your actual frontend origin(s).
 app.add_middleware(

@@ -1,18 +1,7 @@
 import uuid
 from sqlalchemy.orm import Mapped, mapped_column
-from app.database.db import Base
+from app.database.base import Base
 from sqlalchemy import Column, Integer, LargeBinary, ForeignKey, DateTime, func , String
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=lambda: str(uuid.uuid4())
-    )
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class BinanceCredentials(Base):
