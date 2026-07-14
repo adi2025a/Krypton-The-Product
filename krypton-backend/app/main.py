@@ -1,27 +1,15 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.routers import agents_router, auth_router, binance_router, chat_router, market_router, news_router
 from app.core.config import settings
+from app.routers import auth
+from app.core.logger import setup_logger
 
-app = FastAPI(title=settings.APP_NAME, version="1.0.0")
+setup_logger()
 
-# In production, restrict this to your actual frontend origin(s).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title=settings.APP_NAME)
 
-app.include_router(auth_router.router)
-app.include_router(market_router.router)
-app.include_router(news_router.router)
-app.include_router(chat_router.router)
-app.include_router(agents_router.router)
-app.include_router(binance_router.router)
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "app": settings.APP_NAME, "env": settings.ENV}

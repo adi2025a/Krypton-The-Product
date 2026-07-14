@@ -13,9 +13,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from "recharts";
+import BinanceApiKeyPage from "./components/BinanceApiKeyPage";
 
 // ==================== TYPES ====================
-type Page = "landing" | "login" | "signup" | "dashboard" | "workspace";
+type Page = "landing" | "login" | "signup" | "binance-setup" | "binance-confirm" | "dashboard" | "workspace";
 type ApiState = "idle" | "loading" | "success" | "error" | "empty";
 type SentimentType = "bullish" | "bearish" | "neutral";
 type AgentStatus = "running" | "completed" | "error" | "pending";
@@ -1604,24 +1605,38 @@ export default function App() {
           onSignup={() => setPage("signup")}
         />
       )}
-      {page === "login" && (
-        <AuthPage
-          mode="login"
-          onToggle={() => setPage("signup")}
-          onSuccess={(token) => { setAuthToken(token); setPage("dashboard"); }}
-          onBack={() => setPage("landing")}
-        />
-      )}
       {page === "signup" && (
         <AuthPage
           mode="signup"
           onToggle={() => setPage("login")}
-          onSuccess={(token) => { setAuthToken(token); setPage("dashboard"); }}
+          onSuccess={(token) => { setAuthToken(token); setPage("binance-setup"); }}
+          onBack={() => setPage("landing")}
+        />
+      )}
+      {page === "login" && (
+        <AuthPage
+          mode="login"
+          onToggle={() => setPage("signup")}
+          onSuccess={(token) => { setAuthToken(token); setPage("binance-confirm"); }}
           onBack={() => setPage("landing")}
         />
       )}
       {page === "dashboard" && (
         <DashboardPage onContinue={(creds) => { setCredentials(creds); setPage("workspace"); }} />
+      )}
+      {page === "binance-setup" && (
+        <BinanceApiKeyPage
+          mode="setup"
+          onContinue={() => setPage("dashboard")}
+          onBack={() => setPage("signup")}
+        />
+      )}
+      {page === "binance-confirm" && (
+        <BinanceApiKeyPage
+          mode="confirm"
+          onContinue={() => setPage("dashboard")}
+          onBack={() => setPage("login")}
+        />
       )}
       {page === "workspace" && credentials && (
         <WorkspacePage onBack={() => setPage("dashboard")} credentials={credentials} />

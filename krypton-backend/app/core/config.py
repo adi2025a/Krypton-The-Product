@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # --- App ---
-    APP_NAME: str = "Krypton"
+    APP_NAME: str = "Crypto Trading Assistant"
     ENV: str = "development"
 
     # --- Database ---

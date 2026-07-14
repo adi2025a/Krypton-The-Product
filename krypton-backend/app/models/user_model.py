@@ -14,8 +14,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
 
-    # No password field yet -- we're doing OTP-only auth for now (passwordless).
-    # Easy to add a `hashed_password` column later if you want password+OTP hybrid.
+    # Bcrypt hash, never the raw password. Generated in core/security.py
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
