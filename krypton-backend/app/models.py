@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 SentimentType = Literal["bullish", "bearish", "neutral"]
 AgentStatus = Literal["running", "completed", "error", "pending"]
@@ -55,7 +55,17 @@ class LLMCredentials(BaseModel):
     model: str
     api_key: str = Field(..., description="BYOK key, used in-memory only, never stored")
 
+class BinanceCredentialsIn(BaseModel):
+    api_key: str
+    api_secret: str
 
+    @field_validator("api_key", "api_secret")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be empty")
+        return v
 # ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
