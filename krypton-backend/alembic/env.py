@@ -13,6 +13,7 @@ from app.database.base import Base
 from app.models.user_model import User
 from app.models.otp_model import OTP
 from app.models import api_key     # noqa: F401
+from app.models import integration_key  # noqa: F401
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
