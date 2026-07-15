@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     # --- Email (for sending OTP) ---
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
+    SMTP_USER: str 
+    SMTP_PASSWORD: str 
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

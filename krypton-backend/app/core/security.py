@@ -12,14 +12,16 @@ import uuid
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
 from app.core.config import settings
 
-# tokenUrl just tells the OpenAPI docs where to get a token -- doesn't
-# have to be the exact route path used elsewhere.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# HTTPBearer (not OAuth2PasswordBearer): our /auth/login takes a JSON body,
+# not an OAuth2 form (username/password fields). HTTPBearer just tells
+# Swagger UI "this route needs a raw Bearer token pasted in" -- a simple
+# text box in the Authorize popup, matching how we actually issue tokens.
+bearer_scheme = HTTPBearer()
 
 
 def _prehash(raw_password: str) -> bytes:
@@ -56,41 +58,14 @@ def decode_access_token(token: str) -> Optional[str]:
         return None
 
 
-async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> uuid.UUID:
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> uuid.UUID:
     """
     FastAPI dependency: attach this to any protected route via
     `user_id: uuid.UUID = Depends(get_current_user_id)`
     """
-    user_id = decode_access_token(token)
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return uuid.UUID(user_id)
-
-
-def create_access_token(user_id: uuid.UUID) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
-    payload = {"sub": str(user_id), "exp": expire}
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-
-
-def decode_access_token(token: str) -> Optional[str]:
-    """Returns the user_id (as str) if valid, else None."""
-    try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        return payload.get("sub")
-    except JWTError:
-        return None
-
-
-async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> uuid.UUID:
-    """
-    FastAPI dependency: attach this to any protected route via
-    `user_id: uuid.UUID = Depends(get_current_user_id)`
-    """
+    token = credentials.credentials  # raw JWT string, "Bearer " prefix already stripped
     user_id = decode_access_token(token)
     if user_id is None:
         raise HTTPException(
