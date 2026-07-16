@@ -8,7 +8,12 @@ dependencies = [
     "alembic>=1.18.5",
     "asyncpg>=0.31.0",
     "bcrypt>=5.0.0",
+    "ccxt>=4.5.65",
+    "fastapi>=0.139.0",
+    "feedparser>=6.0.12",
     "pydantic-settings>=2.14.2",
     "pydantic[email]>=2.13.4",
     "sqlalchemy>=2.0.51",
+    "ta>=0.11.0",
+    "vadersentiment>=3.3.2",
 ]
