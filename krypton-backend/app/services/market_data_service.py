@@ -41,3 +41,23 @@ async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> list[lis
         return candles
     finally:
         await exchange.close()  # always release the underlying aiohttp session
+
+
+async def fetch_price_in_usdt(asset: str) -> float:
+    """
+    Returns the current price of a single asset in USDT -- used by the
+    risk service to value portfolio holdings. Stablecoins are assumed
+    ~1.0 rather than fetched (some stablecoin/USDT pairs are illiquid
+    or don't exist on Binance, e.g. USDT/USDT isn't a real pair).
+    """
+    if asset.upper() in ("USDT", "USDC", "BUSD", "DAI"):
+        return 1.0
+
+    exchange = ccxt_async.binance()
+    try:
+        ticker = await exchange.fetch_ticker(f"{asset.upper()}/USDT")
+        return float(ticker["last"])
+    except Exception:
+        return 0.0  # couldn't price it (delisted/no USDT pair) -- treat as untradeable/zero value
+    finally:
+        await exchange.close()

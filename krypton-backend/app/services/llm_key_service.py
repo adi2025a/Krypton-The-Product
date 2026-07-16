@@ -58,3 +58,32 @@ async def validate_llm_key(provider: str, api_key: str) -> bool:
     except httpx.HTTPError:
         # network error, timeout, DNS failure etc. -- treat as "couldn't verify"
         return False
+
+
+async def get_active_llm_credentials(db, user_id) -> dict | None:
+    """
+    Used by agent nodes (not routes) to fetch the user's currently active
+    LLM key, decrypted, ready to pass into llm_client_service.call_llm.
+    Returns None if no active key, or if it has expired -- callers must
+    handle that (e.g. return a friendly "please set an LLM key" message).
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.models.api_key import LLMApiKey
+    from app.core.encryption import decrypt_value
+
+    result = await db.execute(
+        select(LLMApiKey).where(LLMApiKey.user_id == user_id, LLMApiKey.is_active == True)  # noqa: E712
+    )
+    key_row = result.scalars().first()
+
+    if key_row is None:
+        return None
+    if key_row.expires_at < datetime.now(timezone.utc):
+        return None  # expired -- treat same as "not set" from the agent's perspective
+
+    return {
+        "provider": key_row.provider,
+        "model_name": key_row.model_name,
+        "api_key": decrypt_value(key_row.encrypted_key),
+    }
