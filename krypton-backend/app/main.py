@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.core.config import settings
-from app.routers import auth, llm_key, integration, status, chart_context, market, news, agent
+from app.routers import auth, llm_key, integration, status, chart_context, market, news, agent, risk
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -12,6 +12,7 @@ app.include_router(chart_context.router, prefix="/context", tags=["context"])
 app.include_router(market.router, prefix="/market", tags=["market"])
 app.include_router(news.router, prefix="/news", tags=["news"])
 app.include_router(agent.router, prefix="/agent", tags=["agent"])
+app.include_router(risk.router, prefix="/risk", tags=["risk"])
 
 
 @app.get("/health")
