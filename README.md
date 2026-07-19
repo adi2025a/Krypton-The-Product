@@ -1,52 +1,67 @@
-# Krypton — AI Crypto Trading Assistant (Backend)
+# Krypton — AI Crypto Trading Assistant
 
-A FastAPI backend powering an AI-assisted crypto trading dashboard: OTP-verified auth, encrypted BYO-LLM key management, optional Binance portfolio integration, live technical indicators, news sentiment analysis, and a modular **LangGraph** multi-agent system for market synthesis.
+A full-stack app that pairs a FastAPI backend with a React/TypeScript frontend to deliver OTP-verified auth, encrypted BYO-LLM key management, optional Binance portfolio integration, live technical indicators, news sentiment analysis, and a LangGraph multi-agent system that synthesizes it all into natural-language trading commentary.
+
+This README ties the two halves together. For deep dives, see:
+- [`krypton-backend/README.md`](#backend-readme) — FastAPI, LangGraph, database schema, full API reference
+- [`frontend/README.md`](#frontend-readme) — React pages, routing state machine, `api.ts` client layer
 
 ---
 
 ## Table of Contents
-- [Architecture Overview](#architecture-overview)
-- [Tech Stack](#tech-stack)
-- [Folder Structure](#folder-structure)
-- [The Agent Graph](#the-agent-graph)
-- [Request Flow (Chat Example)](#request-flow-chat-example)
-- [Database Schema](#database-schema)
-- [API Reference](#api-reference)
-- [Setup & Configuration](#setup--configuration)
-- [Running the App](#running-the-app)
+- [How the Two Halves Fit Together](#how-the-two-halves-fit-together)
+- [Full System Architecture](#full-system-architecture)
+- [End-to-End Flow: Signup Through First Dashboard Load](#end-to-end-flow-signup-through-first-dashboard-load)
+- [End-to-End Flow: Asking the Agent a Question](#end-to-end-flow-asking-the-agent-a-question)
+- [Tech Stack Summary](#tech-stack-summary)
+- [Repository Layout](#repository-layout)
+- [Local Setup — Full Stack](#local-setup--full-stack)
+- [Security Model at a Glance](#security-model-at-a-glance)
+- [Design Principles Recap](#design-principles-recap)
 
 ---
 
-## Architecture Overview
+## How the Two Halves Fit Together
 
-The backend is split into two layers that never overlap:
+The split is deliberately strict: **the frontend holds no secrets and does no computation beyond rendering.** Every LLM key, Binance credential, indicator calculation, sentiment score, and risk figure is computed and/or stored on the backend. The frontend's entire job is:
 
-1. **Deterministic services** (`services/`) — pure computation and I/O. No LLM calls. Fast, free, always available: technical indicators, RSS news + sentiment scoring, portfolio risk math, encryption, Binance integration.
-2. **Agent layer** (`agents/`) — a LangGraph graph that *reads from* the services above and adds exactly one LLM call at the end to synthesize everything into a natural-language answer.
+1. Collect input through a handful of pages.
+2. Send it through one typed client (`config/api.ts`).
+3. Render whatever comes back.
+
+Symmetrically, the backend is split into a **deterministic layer** (services — pure math and API calls, no LLM) and an **agent layer** (LangGraph — reads from the deterministic layer, adds exactly one LLM call at the very end). This means the dashboard's live panels (indicators, news, risk) are always fast and free; you only pay for an LLM call when the user explicitly asks the agent something.
+
+---
+
+## Full System Architecture
 
 ```mermaid
 graph TD
-    subgraph Client["Frontend"]
-        UI[Dashboard / Popup]
+    subgraph Frontend["React SPA (Vite + TS)"]
+        APP[App.tsx — page router]
+        AUTH[AuthPage]
+        LLMP[LLMSetupPage]
+        BINP[BinanceSetupPage]
+        DASH[DashboardPage]
+        API[config/api.ts]
     end
 
-    subgraph API["FastAPI Routers"]
-        AUTH[auth]
-        LLMKEY[llm_key]
-        INTEG[integration]
-        CTX[chart_context]
-        MKT[market]
-        NEWS[news]
-        RISK[risk]
-        AGENT[agent]
-        STATUS[status]
+    subgraph Backend["FastAPI"]
+        R_AUTH[auth]
+        R_LLM[llm_key]
+        R_INTEG[integration]
+        R_CTX[chart_context]
+        R_MKT[market]
+        R_NEWS[news]
+        R_RISK[risk]
+        R_AGENT[agent]
+        R_STATUS[status]
     end
 
     subgraph SVC["Deterministic Services — no LLM"]
         IND[indicator_service]
         MDS[market_data_service]
-        NS[news_service]
-        NR[news_ranking_service]
+        NS[news_service / news_ranking_service]
         SENT[sentiment_service]
         RS[risk_service]
         BIN[binance_service]
@@ -59,10 +74,10 @@ graph TD
         MA[market_analysis_node]
         SN[sentiment_node]
         RN[risk_node]
-        SYN["synthesis_node — LLM call"]
+        SYN["synthesis_node — the ONLY LLM call"]
     end
 
-    subgraph EXT["External APIs"]
+    subgraph EXT["External"]
         BINAPI[(Binance API)]
         RSS[(RSS Feeds)]
         LLMAPI[(OpenAI / Groq / Gemini / Claude)]
@@ -75,296 +90,226 @@ graph TD
         CT[(chart_contexts)]
     end
 
-    UI --> AUTH & LLMKEY & INTEG & CTX & MKT & NEWS & RISK & AGENT & STATUS
+    APP --> AUTH & LLMP & BINP & DASH
+    AUTH & LLMP & BINP & DASH --> API
+    API -->|Bearer JWT over HTTPS| R_AUTH & R_LLM & R_INTEG & R_CTX & R_MKT & R_NEWS & R_RISK & R_AGENT & R_STATUS
 
-    MKT --> IND --> MDS --> BINAPI
-    NEWS --> NR --> NS --> RSS
-    NEWS --> SENT
-    RISK --> RS --> BIN --> BINAPI
-    LLMKEY --> ENC
-    INTEG --> ENC
-    AUTH --> SEC
+    R_MKT --> IND --> MDS --> BINAPI
+    R_NEWS --> NS --> RSS
+    R_NEWS --> SENT
+    R_RISK --> RS --> BIN --> BINAPI
+    R_LLM --> ENC
+    R_INTEG --> ENC
+    R_AUTH --> SEC
 
-    AGENT --> GRAPH
+    R_AGENT --> GRAPH
     GRAPH --> MA --> MDS
     GRAPH --> SN --> NS
     GRAPH --> RN --> RS
     MA & SN & RN --> SYN --> LLMAPI
 
-    AUTH -.-> UT
-    LLMKEY -.-> KT
-    INTEG -.-> IT
-    CTX -.-> CT
-```
-
-**Key architectural rule:** only `synthesis_node` ever calls an LLM. Every other node — and every REST endpoint that powers the dashboard's live panels — is pure math or a direct API call. This keeps the app fast and cheap to run; you only pay for an LLM call when the user actually asks a question or hits "Strategy."
-
----
-
-## Tech Stack
-
-| Concern | Choice | Why |
-|---|---|---|
-| Web framework | FastAPI (async) | Native async, auto-generated OpenAPI docs |
-| Database | PostgreSQL + SQLAlchemy 2.0 (async) | Relational integrity for user/key data |
-| Migrations | Alembic | Version-controlled schema changes |
-| Auth | Custom JWT (`python-jose`) + `bcrypt` | Stateless sessions, OTP-verified signup |
-| Encryption at rest | `cryptography` (Fernet) | Symmetric encryption for API keys |
-| Market data | CCXT + Binance public API | Unified exchange interface, no key needed for public data |
-| Indicators | `ta` | RSI, MACD, EMA, Bollinger Bands |
-| News | `feedparser` (RSS) | No paid news API needed |
-| Sentiment | `vaderSentiment` | Deterministic, rule-based, free — no LLM per headline |
-| Agent orchestration | LangGraph | Modular, parallel node execution, easy to extend |
-| LLM providers | OpenAI, Groq, Gemini, Anthropic SDKs | User brings their own key/model |
-
----
-
-## Folder Structure
-
-```
-app/
-├── main.py                     # FastAPI entrypoint, router registration
-├── core/
-│   ├── config.py                # Pydantic Settings (env vars)
-│   ├── security.py              # Password hashing (bcrypt), JWT issue/verify
-│   └── encryption.py            # Fernet encrypt/decrypt for API keys at rest
-├── database/
-│   ├── base.py                   # SQLAlchemy declarative Base
-│   └── session.py                # Async engine + get_db() dependency
-├── models/                       # SQLAlchemy ORM tables
-│   ├── user_model.py
-│   ├── otp_model.py
-│   ├── api_key.py                 # LLM keys (encrypted, expiring)
-│   ├── integration_key.py         # Exchange keys (Binance now, others later)
-│   └── chart_context.py           # User's current symbol/timeframe selection
-├── schemas/                      # Pydantic request/response models
-│   ├── auth.py, llm_key.py, integration.py,
-│   ├── chart_context.py, market.py, news.py,
-│   └── risk.py, agent.py, status.py
-├── routers/                      # API endpoints
-│   ├── auth.py, llm_key.py, integration.py,
-│   ├── chart_context.py, market.py, news.py,
-│   └── risk.py, agent.py, status.py
-├── services/                     # Business logic — the deterministic layer
-│   ├── otp_service.py, email_service.py
-│   ├── market_data_service.py, indicator_service.py
-│   ├── news_service.py, news_ranking_service.py, sentiment_service.py
-│   ├── binance_service.py, risk_service.py
-│   ├── llm_key_service.py, llm_client_service.py
-│   └── agent_service.py            # Glue: assembles AgentState, invokes the graph
-└── agents/                       # LangGraph agent layer
-    ├── state.py                    # Shared AgentState (TypedDict)
-    ├── market_analysis_agent.py    # Node: wraps indicator_service
-    ├── sentiment_agent.py          # Node: wraps news + sentiment services
-    ├── risk_agent.py               # Node: wraps risk_service (conditional)
-    ├── synthesis_agent.py          # Node: the ONLY LLM call
-    └── graph.py                    # Wires all four nodes together
+    R_AUTH -.-> UT
+    R_LLM -.-> KT
+    R_INTEG -.-> IT
+    R_CTX -.-> CT
 ```
 
 ---
 
-## The Agent Graph
+## End-to-End Flow: Signup Through First Dashboard Load
 
-```mermaid
-graph LR
-    START((START)) --> MA[market_analysis_node]
-    START --> SN[sentiment_node]
-    START --> RN["risk_node<br/>(no-ops if Binance<br/>not connected)"]
-
-    MA --> SYN[synthesis_node]
-    SN --> SYN
-    RN --> SYN
-
-    SYN --> END((END))
-
-    style SYN fill:#f9d77e,stroke:#333
-    style RN fill:#d9d9d9,stroke:#333,stroke-dasharray: 5 5
-```
-
-- `market_analysis_node`, `sentiment_node`, `risk_node` run **concurrently** — none depends on another's output.
-- `synthesis_node` (the only orange node — the only LLM call) waits for all three, then combines whatever succeeded into one answer.
-- `risk_node` degrades gracefully: if Binance isn't connected, it returns immediately with no data, and `synthesis_node` simply omits risk from its answer rather than failing.
-- Any node can fail independently (e.g. Binance API hiccup) without crashing the whole graph — failures accumulate in an `errors` list rather than halting execution.
-
----
-
-## Request Flow (Chat Example)
+This is the complete happy path a brand-new user walks through, spanning both halves of the stack.
 
 ```mermaid
 sequenceDiagram
-    participant U as User (Frontend)
+    participant U as User
+    participant FE as Frontend (AuthPage → App.tsx)
+    participant BE as Backend
+    participant DB as PostgreSQL
+
+    U->>FE: fill signup form (email, password)
+    FE->>BE: POST /auth/signup
+    BE->>DB: create user (unverified), create OTP
+    BE-->>FE: {message, email}
+    FE->>FE: switch to OTP view
+
+    U->>FE: enter 6-digit code
+    FE->>BE: POST /auth/verify-otp
+    BE->>DB: mark user verified
+    BE-->>FE: {message}  — NOTE: no token issued here
+    FE->>FE: switch to login view, show "verified" banner
+
+    U->>FE: enter password again
+    FE->>BE: POST /auth/login
+    BE->>DB: verify password
+    BE-->>FE: {access_token, token_type}
+    FE->>FE: store token in sessionStorage
+    FE->>App.tsx: onSuccess(email)
+
+    App.tsx->>BE: GET /status/onboarding
+    BE-->>App.tsx: {llm_key_set: false, ...}
+    App.tsx->>FE: route to LLMSetupPage
+
+    U->>FE: pick provider/model, paste API key
+    FE->>BE: POST /llm-key/set
+    BE->>BE: encrypt key (Fernet), store
+    BE-->>FE: {is_valid, expires_at, ...}
+    FE->>App.tsx: onNext()
+    App.tsx->>FE: route to BinanceSetupPage
+
+    U->>FE: connect Binance (or skip)
+    alt connects
+        FE->>BE: POST /integration/binance/connect
+        BE->>BE: validate + encrypt + store
+    end
+    App.tsx->>FE: route to DashboardPage
+
+    FE->>BE: GET /market/indicators, /news/feed, /risk/profile
+    BE-->>FE: live data (no LLM cost)
+```
+
+**Why verify-otp doesn't auto-login:** the backend deliberately separates "prove you own this email" from "prove you know the password" — two distinct checks, two distinct requests. It costs the user one extra password entry but means a leaked/guessed OTP alone can never grant a session.
+
+---
+
+## End-to-End Flow: Asking the Agent a Question
+
+This is the one flow that actually spends an LLM call — everything else on the dashboard (indicators, news, risk) is deterministic and free.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as DashboardPage
     participant R as routers/agent.py
     participant AS as agent_service.py
     participant DB as PostgreSQL
     participant G as LangGraph
     participant EXT as Binance / RSS / LLM
 
-    U->>R: POST /agent/chat {"message": "..."}
+    U->>FE: types a question, hits send
+    FE->>R: POST /agent/chat {"message": "..."}
     R->>AS: run_trading_assistant(db, user_id, question)
     AS->>DB: fetch chart_context, LLM key, Binance key
     AS->>EXT: decrypt + fetch live Binance balances (if connected)
     AS->>G: agent_graph.ainvoke(initial_state)
 
-    par Parallel execution
+    par Parallel, no LLM involved yet
         G->>EXT: fetch OHLCV candles (market_analysis_node)
     and
         G->>EXT: fetch RSS news (sentiment_node)
     and
-        G->>G: compute risk from balances (risk_node)
+        G->>G: compute risk from balances (risk_node — no-ops if no Binance)
     end
 
-    G->>EXT: call user's chosen LLM (synthesis_node)
+    G->>EXT: single LLM call (synthesis_node) — the only paid step
     G-->>AS: final AgentState
-    AS-->>R: {final_response, indicators, news_items, ...}
-    R-->>U: JSON response
+    AS-->>R: {final_response, indicators, news_items, sentiment_summary, risk_profile, errors}
+    R-->>FE: JSON response
+    FE->>U: render answer + supporting panels
+```
+
+If any node fails (e.g. a Binance API hiccup), it's recorded in `errors` rather than aborting the whole request — `synthesis_node` simply works with whatever data did come through.
+
+---
+
+## Tech Stack Summary
+
+| Layer | Choice |
+|---|---|
+| Frontend framework | React 18 + TypeScript, bundled with Vite |
+| Frontend styling | Tailwind CSS (CSS-variable design tokens) |
+| Frontend animation | `motion/react` |
+| Frontend auth storage | `sessionStorage` (token only, cleared on tab close) |
+| Backend framework | FastAPI (async) |
+| Database | PostgreSQL + SQLAlchemy 2.0 (async) + Alembic migrations |
+| Backend auth | Custom JWT (`python-jose`) + `bcrypt` |
+| Encryption at rest | `cryptography` (Fernet) for LLM/exchange keys |
+| Market data | CCXT + Binance public API |
+| Indicators | `ta` (RSI, MACD, EMA, Bollinger Bands) |
+| News | `feedparser` (RSS) |
+| Sentiment | `vaderSentiment` (rule-based, no LLM per headline) |
+| Agent orchestration | LangGraph |
+| LLM providers | OpenAI, Groq, Gemini, Anthropic — user brings their own key |
+
+---
+
+## Repository Layout
+
+```
+project-root/
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── core/            # config, security, encryption
+│   │   ├── database/        # SQLAlchemy base + session
+│   │   ├── models/          # ORM tables
+│   │   ├── schemas/         # Pydantic request/response models
+│   │   ├── routers/         # REST endpoints
+│   │   ├── services/        # deterministic business logic
+│   │   └── agents/          # LangGraph nodes + graph.py
+│   └── README.md
+│
+└── frontend/
+    ├── src/
+    │   ├── config/
+    │   │   └── api.ts        # single typed client for the whole backend
+    │   └── pages/
+    │       ├── App.tsx        # page router / state machine
+    │       ├── AuthPage.tsx
+    │       ├── LLMSetupPage.tsx
+    │       ├── BinanceSetupPage.tsx
+    │       └── DashboardPage.tsx
+    └── README.md
 ```
 
 ---
 
-## Database Schema
+## Local Setup — Full Stack
 
-```mermaid
-erDiagram
-    USERS ||--o{ OTPS : has
-    USERS ||--o{ LLM_API_KEYS : owns
-    USERS ||--o{ INTEGRATION_KEYS : owns
-    USERS ||--|| CHART_CONTEXTS : has
-
-    USERS {
-        uuid id PK
-        string email
-        string hashed_password
-        bool is_verified
-        bool is_active
-    }
-    OTPS {
-        uuid id PK
-        uuid user_id FK
-        string otp_hash
-        string purpose
-        datetime expires_at
-        bool is_used
-    }
-    LLM_API_KEYS {
-        uuid id PK
-        uuid user_id FK
-        string provider
-        string model_name
-        text encrypted_key
-        bool is_active
-        bool is_valid
-        datetime expires_at
-    }
-    INTEGRATION_KEYS {
-        uuid id PK
-        uuid user_id FK
-        string platform
-        text encrypted_api_key
-        text encrypted_api_secret
-        bool is_active
-        bool is_valid
-    }
-    CHART_CONTEXTS {
-        uuid user_id PK, FK
-        string symbol
-        string timeframe
-    }
-```
-
----
-
-## API Reference
-
-All routes except `/auth/*` and `/health` require `Authorization: Bearer <token>`.
-
-| Method | Path | Purpose | LLM cost |
-|---|---|---|---|
-| POST | `/auth/signup` | Email + password signup, sends OTP | – |
-| POST | `/auth/verify-otp` | Verify signup OTP | – |
-| POST | `/auth/resend-otp` | Resend OTP (also un-sticks unverified re-signups) | – |
-| POST | `/auth/login` | Email + password → JWT | – |
-| POST | `/llm-key/set` | Store encrypted LLM key (provider/model/key) | – |
-| GET | `/llm-key/status` | Check active LLM key | – |
-| POST | `/integration/binance/connect` | Store encrypted Binance key+secret | – |
-| GET | `/integration/binance/status` | Check Binance connection | – |
-| GET | `/integration/binance/portfolio` | Live non-zero balances | – |
-| GET | `/status/onboarding` | Combined onboarding status | – |
-| PUT | `/context/chart` | Set current symbol/timeframe | – |
-| GET | `/context/chart` | Get current symbol/timeframe (defaults if unset) | – |
-| GET | `/market/indicators` | RSI, MACD, EMA, Bollinger Bands | none |
-| GET | `/news/feed` | Top 5 symbol-relevant news + sentiment | none |
-| GET | `/risk/profile` | Concentration + volatility risk (404 if no Binance) | none |
-| POST | `/agent/chat` | Ask the assistant a question | **yes** |
-| POST | `/agent/strategy` | General synthesized read on current symbol | **yes** |
-
----
-
-## Setup & Configuration
-
-### 1. Clone and create a virtual environment
+### 1. Backend
 ```bash
-git clone <your-repo-url> krypton-backend
-cd krypton-backend
+cd backend
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-```
-
-### 2. Install dependencies
-```bash
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 3. Configure environment variables
-Copy `.env.example` to `.env` and fill in real values:
-
-```bash
-cp .env.example .env
-```
-
-| Variable | Description | How to generate |
-|---|---|---|
-| `DATABASE_URL` | Postgres connection string | `postgresql+asyncpg://user:pass@localhost:5432/crypto_db` |
-| `JWT_SECRET_KEY` | Signs session tokens | `openssl rand -hex 32` |
-| `ENCRYPTION_KEY` | Encrypts API keys at rest | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `OTP_EXPIRE_MINUTES` | OTP validity window | default `5` |
-| `LLM_KEY_DEFAULT_TTL_DAYS` | Default LLM key expiry | default `7` |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | For sending OTP emails | your email provider's SMTP settings |
-
-### 4. Set up the database
-```bash
-# create the database first (via psql or a GUI), then:
-alembic revision --autogenerate -m "initial schema"
+cp .env.example .env    # fill in DATABASE_URL, JWT_SECRET_KEY, ENCRYPTION_KEY, SMTP_*
 alembic upgrade head
-```
-
-> Every time you add/change a model, repeat: import it in `alembic/env.py`, then `alembic revision --autogenerate` + `alembic upgrade head`.
-
-### 5. (Optional) Get a Binance API key for testing
-Create one at binance.com → API Management. **Use read-only permissions only** — never enable withdrawals/trading on a key you paste into any third-party app, including this one.
-
-### 6. (Optional) Get an LLM API key
-Any one of: OpenAI, Groq, Google AI Studio (Gemini), or Anthropic (Claude). You'll paste this via `POST /llm-key/set` after logging in — it's stored encrypted and expires after 7 days by default.
-
----
-
-## Running the App
-
-```bash
 uvicorn app.main:app --reload
 ```
+Runs at `http://127.0.0.1:8000`, docs at `/docs`.
 
-- API root: `http://127.0.0.1:8000`
-- Interactive docs (Swagger UI): `http://127.0.0.1:8000/docs`
-- Health check: `GET /health`
+### 2. Frontend
+```bash
+cd frontend
+npm install
+echo "VITE_API_BASE_URL=http://127.0.0.1:8000" > .env.local
+npm run dev
+```
+Runs at `http://localhost:5173`.
 
-**To test protected routes in `/docs`:** call `/auth/login`, copy the `access_token`, click the green **Authorize** button, paste the raw token (no `Bearer` prefix needed), then every other request in the docs UI will include it automatically.
+### 3. Verify the connection
+Open the frontend, sign up, check your email for the OTP (SMTP must be configured), verify, log in, add an LLM key from any of the four supported providers, and either connect a **read-only** Binance key or skip straight to the dashboard.
+
+---
+
+## Security Model at a Glance
+
+| Concern | How it's handled |
+|---|---|
+| Passwords | Hashed with `bcrypt`, never stored or logged in plaintext |
+| Sessions | Stateless JWT, `Authorization: Bearer <token>` on every protected route |
+| LLM / exchange API keys | Encrypted at rest (Fernet); decrypted server-side only, per request; never sent back to the frontend after being set |
+| Signup integrity | Two-step OTP verification, separate from login — a leaked OTP alone doesn't grant a session |
+| Frontend token storage | `sessionStorage`, not `localStorage` — cleared when the tab closes, limiting the window a stolen token is useful in |
+| Binance key scope | Documented as **read-only recommended** — the app has no reason to ever request trading/withdrawal permissions |
+| 401 handling | Centralized in the frontend's `apiFetch` wrapper — any expired/invalid token clears itself and redirects to login, rather than being handled ad hoc per page |
 
 ---
 
 ## Design Principles Recap
 
-1. **Deterministic work stays out of the LLM.** Indicators, sentiment scoring, and risk math are all pure computation — fast, free, and testable without ever calling a model.
-2. **Only one LLM call per agent invocation** (`synthesis_node`), regardless of how many data sources feed into it.
-3. **Optional integrations degrade gracefully, never crash.** No Binance connection → risk section is simply omitted, not an error.
-4. **One shared LLM client interface** (`llm_client_service.call_llm`) means agent code never contains provider-specific logic — Groq, OpenAI, Gemini, and Claude are interchangeable behind one function signature.
-5. **Nodes never touch the database directly.** All DB/decryption/external-API I/O happens once in `agent_service.py` before the graph runs — every node operates on plain, already-fetched `AgentState` data, making each one independently testable.
+1. **Deterministic work stays out of the LLM.** Indicators, sentiment, and risk math are pure computation on the backend — fast, free, testable without a model.
+2. **Exactly one LLM call per agent invocation**, no matter how many data sources feed into it.
+3. **Optional integrations degrade gracefully everywhere.** No Binance connection → the frontend shows an upsell instead of an error, and `risk_node` simply omits itself from the agent's answer.
+4. **The frontend never holds secrets.** Keys are write-only from its perspective; only status booleans (`is_valid`, `is_active`, `llm_key_set`) come back.
+5. **One typed client, one fetch wrapper, one 401 handler** on the frontend; **one shared LLM client interface** and **no direct DB access from agent nodes** on the backend — each side has a single seam where cross-cutting concerns live, instead of being reimplemented per page or per node.
