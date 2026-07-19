@@ -8,10 +8,10 @@ app = FastAPI(title=settings.APP_NAME)
 # 2. Add the CORS middleware right after initializing the app instance
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Allows all origins
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],       # ⚠️ CRITICAL: This allows POST, PUT, DELETE, and OPTIONS
-    allow_headers=["*"],       # Allows all custom headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Your router inclusions remain perfectly fine
