@@ -1,5 +1,5 @@
 # Step 1: Use an official, lightweight Python base image
-FROM python:3.11-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 # Step 2: Install uv directly into the container
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
