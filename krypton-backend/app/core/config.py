@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 1 day
 
-    CORS_ORIGINS:str 
+    CORS_ORIGINS:list[str] 
 
     # --- Fernet key used to encrypt LLM / Binance API keys at rest ---
     ENCRYPTION_KEY: str  # generate with cryptography.fernet.Fernet.generate_key()
