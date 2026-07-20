@@ -9,7 +9,11 @@ under load.
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.core.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=(settings.ENV == "development"))
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=(settings.ENV == "development"),
+    pool_pre_ping=True,
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
