@@ -1,6 +1,6 @@
 # Krypton — AI Crypto Trading Assistant (Frontend)
 
-A React + TypeScript single-page app that walks a user through OTP-verified signup, BYO-LLM key setup, optional Binance connection, and then into a live trading dashboard powered entirely by the FastAPI backend.
+A React + TypeScript single-page app that walks a user through OTP-verified signup, BYO-LLM key setup, optional Binance connection, and then into a live trading dashboard powered entirely by the FastAPI backend
 
 ---
 
