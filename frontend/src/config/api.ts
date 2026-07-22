@@ -8,8 +8,9 @@
 // ================================================================
 
 // ── Base ─────────────────────────────────────────────────────────
+const rawBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 export const API_CONFIG = {
-  baseUrl: (import.meta as any).env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
+  baseUrl: rawBaseUrl.trim().replace(/\/+$/, ""),
   timeout: 10_000,
 };
 
@@ -43,9 +44,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
 
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const url = `${API_CONFIG.baseUrl}${cleanPath}`;
+
   let res: Response;
   try {
-    res = await fetch(`${API_CONFIG.baseUrl}${path}`, {
+    res = await fetch(url, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -54,6 +58,14 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       },
       signal: controller.signal,
     });
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new ApiError(408, "Request timed out. Please check your backend server connection.");
+    }
+    if (err instanceof ApiError) {
+      throw err;
+    }
+    throw new ApiError(0, `Failed to connect to backend at ${API_CONFIG.baseUrl}. ${err.message || "Network error"}`);
   } finally {
     clearTimeout(timeoutId);
   }
