@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Cpu, ShieldCheck, LogOut, ChevronDown, Activity, Sparkles } from 'lucide-react';
+import { Cpu, ShieldCheck, LogOut, ChevronDown, Activity } from 'lucide-react';
 
 const POPULAR_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'];
 
@@ -17,8 +17,8 @@ export const Navbar: React.FC<NavbarProps> = () => {
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-emerald-400 p-0.5 shadow-lg shadow-indigo-500/20">
-            <div className="w-full h-full bg-[#090d16] rounded-[10px] flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-cyan-400" />
+            <div className="w-full h-full bg-[#090d16] rounded-[10px] flex items-center justify-center p-1">
+              <img src="/assets/krypton_logo.png" alt="Krypton Logo" className="w-full h-full object-contain" />
             </div>
           </div>
           <div className="hidden sm:block">
