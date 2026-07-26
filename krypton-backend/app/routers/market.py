@@ -40,3 +40,30 @@ async def get_indicators(
     indicators = compute_indicators(candles)
 
     return IndicatorResponse(symbol=symbol, timeframe=timeframe, **indicators)
+
+
+@router.get("/ohlcv")
+async def get_ohlcv(
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    limit: Optional[int] = 200,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    if symbol is None or timeframe is None:
+        result = await db.execute(select(ChartContext).where(ChartContext.user_id == user_id))
+        context = result.scalar_one_or_none()
+        symbol = symbol or (context.symbol if context else "BTCUSDT")
+        timeframe = timeframe or (context.timeframe if context else "15m")
+
+    try:
+        max_limit = min(limit or 200, 500)
+        candles = await fetch_ohlcv(symbol, timeframe, limit=max_limit)
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"Could not fetch market data for {symbol} ({timeframe})")
+
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candles": candles  # [[timestamp, open, high, low, close, volume], ...]
+    }

@@ -1,325 +1,201 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Link } from "react-router-dom";
-import { motion, AnimatePresence } from "motion/react";
-import {
-  MessageSquare, TrendingUp, RefreshCw, ChevronRight, Activity, Newspaper,
-} from "lucide-react";
-import {
-  newsAPI, marketAPI, chartContextAPI,
-  type NewsItem, type Timeframe, type MarketIndicators,
-} from "../config/api";
-import ChatOverlay from "../components/ChatOverlay";
+import React, { useEffect, useState, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import apiClient from '../api/client';
+import type { NewsItem } from '../types';
+import { Newspaper, ExternalLink, RefreshCw, TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 
-const SYMBOL_OPTIONS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT"];
-const TIMEFRAME_OPTIONS: Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
-
-const TV_INTERVAL_MAP: Record<Timeframe, string> = {
-  "1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D",
-};
-
-function sentimentColor(label: string): { color: string; bg: string } {
-  if (label === "bullish") return { color: "#00e5b0", bg: "rgba(0,229,176,0.08)" };
-  if (label === "bearish") return { color: "#ef4444", bg: "rgba(239,68,68,0.08)" };
-  return { color: "#5a6a8a", bg: "rgba(90,106,138,0.08)" };
-}
-
-function sentimentGaugeValue(score: number): number {
-  return Math.round(((score + 1) / 2) * 100);
-}
-
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return "recently";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-export default function DashboardPage() {
-  const [chatOpen, setChatOpen] = useState(false);
+export const DashboardPage: React.FC = () => {
+  const { activeSymbol } = useAuth();
   const [news, setNews] = useState<NewsItem[]>([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-  const [selectedNewsLink, setSelectedNewsLink] = useState<string | null>(null);
+  const [loadingNews, setLoadingNews] = useState<boolean>(true);
+  const [newsError, setNewsError] = useState<string | null>(null);
 
-  const [symbol, setSymbol] = useState("BTCUSDT");
-  const [timeframe, setTimeframe] = useState<Timeframe>("15m");
-  const [indicators, setIndicators] = useState<MarketIndicators | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const chartRef = useRef<HTMLDivElement>(null);
-  const tvWidgetRef = useRef<any>(null);
-
-  useEffect(() => {
-    chartContextAPI.get().then((ctx) => {
-      if (ctx.symbol) setSymbol(ctx.symbol);
-      if (ctx.timeframe) setTimeframe(ctx.timeframe);
-    }).catch(() => {});
-  }, []);
-
-  const loadNews = useCallback(async () => {
-    setNewsLoading(true);
+  const fetchNews = async () => {
+    setLoadingNews(true);
+    setNewsError(null);
     try {
-      const res = await newsAPI.getFeed(symbol, 8);
-      setNews(res.items);
-    } catch {
-      setNews([]);
+      const res = await apiClient.get<{ items: NewsItem[] }>(`/news/feed?symbol=${activeSymbol}&limit=12`);
+      setNews(res.data.items || []);
+    } catch (err: any) {
+      setNewsError(err.response?.data?.detail || 'Failed to fetch news feed');
     } finally {
-      setNewsLoading(false);
+      setLoadingNews(false);
     }
-  }, [symbol]);
-
-  const loadIndicators = useCallback(async () => {
-    try {
-      const res = await marketAPI.getIndicators(symbol, timeframe);
-      setIndicators(res);
-    } catch {
-      setIndicators(null);
-    }
-  }, [symbol, timeframe]);
-
-  useEffect(() => {
-    loadNews();
-    loadIndicators();
-  }, [loadNews, loadIndicators]);
-
-  const handleSymbolChange = async (newSym: string) => {
-    setSymbol(newSym);
-    await chartContextAPI.set(newSym, timeframe).catch(() => {});
-  };
-
-  const handleTimeframeChange = async (newTf: Timeframe) => {
-    setTimeframe(newTf);
-    await chartContextAPI.set(symbol, newTf).catch(() => {});
   };
 
   useEffect(() => {
-    if (!chartRef.current) return;
-    chartRef.current.innerHTML = "";
+    fetchNews();
+  }, [activeSymbol]);
 
-    const container = document.createElement("div");
-    container.className = "tradingview-widget-container__widget";
-    container.style.height = "100%";
-    container.style.width = "100%";
-    chartRef.current.appendChild(container);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    containerRef.current.innerHTML = '';
 
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.type = "text/javascript";
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/tv.js';
     script.async = true;
-    script.innerHTML = JSON.stringify({
-      autosize: true,
-      symbol: `BINANCE:${symbol}`,
-      interval: TV_INTERVAL_MAP[timeframe] || "15",
-      timezone: "Etc/UTC",
-      theme: "dark",
-      style: "1",
-      locale: "en",
-      enable_publishing: false,
-      backgroundColor: "#0d1117",
-      gridColor: "rgba(255, 255, 255, 0.04)",
-      hide_top_toolbar: false,
-      hide_legend: false,
-      save_image: false,
-      calendar: false,
-      hide_volume: false,
-      support_host: "https://www.tradingview.com",
-    });
+    script.onload = () => {
+      if ((window as any).TradingView && containerRef.current) {
+        new (window as any).TradingView.widget({
+          autosize: true,
+          symbol: `BINANCE:${activeSymbol}`,
+          interval: '15',
+          timezone: 'Etc/UTC',
+          theme: 'dark',
+          style: '1',
+          locale: 'en',
+          toolbar_bg: '#090d16',
+          enable_publishing: false,
+          allow_symbol_change: true,
+          container_id: containerRef.current.id,
+          backgroundColor: '#090d16',
+          gridColor: 'rgba(255, 255, 255, 0.05)',
+        });
+      }
+    };
+    document.head.appendChild(script);
 
-    chartRef.current.appendChild(script);
-    tvWidgetRef.current = script;
-  }, [symbol, timeframe]);
+    return () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+  }, [activeSymbol]);
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] bg-background flex flex-col overflow-hidden">
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: TradingView chart */}
-        <div className="flex-1 flex flex-col border-r border-border">
-          <div className="h-10 flex items-center justify-between px-4 border-b border-border shrink-0">
-            <div className="flex items-center gap-3">
-              <select
-                value={symbol}
-                onChange={(e) => handleSymbolChange(e.target.value)}
-                className="bg-transparent text-xs font-['Rajdhani'] font-semibold tracking-wider text-foreground uppercase focus:outline-none cursor-pointer"
-              >
-                {SYMBOL_OPTIONS.map((s) => (
-                  <option key={s} value={s} className="bg-card text-foreground">
-                    {s.replace("USDT", "/USDT")}
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex items-center gap-0.5 bg-secondary rounded-md p-0.5">
-                {TIMEFRAME_OPTIONS.map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => handleTimeframeChange(tf)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                      timeframe === tf ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {indicators && (
-              <span className="text-xs font-mono text-foreground font-medium">
-                ${indicators.close.toLocaleString()}
-              </span>
-            )}
+    <div className="p-6 space-y-6">
+      {/* Top Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl glass-panel border border-indigo-500/20 shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+            <Sparkles className="w-6 h-6" />
           </div>
-
-          <div ref={chartRef} className="tradingview-widget-container flex-1 relative" style={{ minHeight: 0 }}>
-            <div className="absolute inset-0 bg-card flex items-center justify-center">
-              <div className="text-center">
-                <Activity size={20} className="text-muted-foreground mx-auto mb-2 animate-pulse" />
-                <p className="text-xs font-mono text-muted-foreground">Loading chart...</p>
-              </div>
-            </div>
+          <div>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              Market Dashboard <span className="text-cyan-400 font-mono text-sm">[{activeSymbol}]</span>
+            </h1>
+            <p className="text-xs text-slate-400">
+              Live TradingView chart analysis side-by-side with real-time news intelligence
+            </p>
           </div>
         </div>
 
-        {/* Right: News feed */}
-        <div className="w-80 xl:w-96 flex flex-col border-border shrink-0">
-          <div className="h-9 flex items-center justify-between px-4 border-b border-border shrink-0">
-            <span className="text-xs font-['Rajdhani'] font-semibold tracking-wider text-foreground uppercase">Live News</span>
-            <div className="flex items-center gap-2">
-              <Link
-                to="/news"
-                className="text-[11px] font-mono text-[#00e5b0] hover:underline font-semibold transition-all flex items-center gap-1"
-              >
-                View All 20 ↗
-              </Link>
-              <button onClick={loadNews} className="text-muted-foreground hover:text-foreground transition-colors">
-                <RefreshCw size={12} className={newsLoading ? "animate-spin" : ""} />
-              </button>
+        <button
+          onClick={fetchNews}
+          disabled={loadingNews}
+          className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 transition-all self-start md:self-auto"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loadingNews ? 'animate-spin' : ''}`} />
+          <span>Refresh Feed</span>
+        </button>
+      </div>
+
+      {/* Main Split Layout: Left Chart, Right News */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Side: TradingView Chart (8 cols) */}
+        <div className="lg:col-span-8 glass-panel p-4 rounded-2xl border border-white/10 shadow-2xl h-[650px] flex flex-col">
+          <div className="flex items-center justify-between mb-3 px-2">
+            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              Advanced TradingView Interactive Chart
             </div>
+            <span className="text-[11px] text-slate-500 font-mono">BINANCE:{activeSymbol}</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {newsLoading ? (
-              <div className="p-4 space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="animate-pulse space-y-2">
-                    <div className="h-3 bg-muted rounded w-3/4" />
-                    <div className="h-2 bg-muted rounded w-full" />
-                    <div className="h-2 bg-muted rounded w-2/3" />
-                  </div>
-                ))}
+          <div className="flex-1 w-full relative rounded-xl overflow-hidden bg-[#090d16] border border-white/5">
+            <div id={`tradingview_chart_${activeSymbol}`} ref={containerRef} className="w-full h-full min-h-[550px]" />
+          </div>
+        </div>
+
+        {/* Right Side: News API Feed (4 cols) */}
+        <div className="lg:col-span-4 glass-panel p-5 rounded-2xl border border-white/10 shadow-2xl h-[650px] flex flex-col">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+            <div className="flex items-center gap-2 text-white font-bold text-sm">
+              <Newspaper className="w-4 h-4 text-cyan-400" />
+              <span>Live News Feed</span>
+            </div>
+            <span className="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+              {news.length} Items
+            </span>
+          </div>
+
+          {/* News List Scroll Container */}
+          <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
+            {loadingNews ? (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                <span>Fetching latest market news...</span>
+              </div>
+            ) : newsError ? (
+              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300">
+                {newsError}
               </div>
             ) : news.length === 0 ? (
-              <div className="p-4 text-xs font-mono text-muted-foreground text-center">
-                No relevant news found for {symbol} right now.
-              </div>
+              <div className="p-4 text-center text-slate-400 text-xs">No recent news available for this symbol.</div>
             ) : (
-              <div className="divide-y divide-border">
-                {news.map((item) => {
-                  const sentiment = sentimentColor(item.sentiment_label);
-                  const gauge = sentimentGaugeValue(item.sentiment_score);
-                  const isSelected = selectedNewsLink === item.link;
-                  return (
-                    <motion.div
-                      key={item.link}
-                      onClick={() => setSelectedNewsLink(isSelected ? null : item.link)}
-                      className="p-3.5 cursor-pointer hover:bg-secondary/30 transition-colors"
-                      layout
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <span
-                          className="text-[10px] font-mono tracking-wider px-1.5 py-0.5 rounded font-medium shrink-0 uppercase"
-                          style={{ color: sentiment.color, background: sentiment.bg }}
-                        >
-                          {item.sentiment_label}
+              news.map((item, idx) => {
+                const label = item.sentiment_label?.toLowerCase();
+                const isBull = label === 'bullish';
+                const isBear = label === 'bearish';
+
+                return (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.04 }}
+                    className="p-3.5 rounded-xl glass-card border border-white/5 hover:border-indigo-500/30 transition-all flex flex-col justify-between gap-2"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                          {item.source}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono font-semibold" style={{ color: sentiment.color }}>
-                            {gauge}
-                          </span>
-                          <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all" style={{ width: `${gauge}%`, background: sentiment.color }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-foreground leading-relaxed font-medium mb-1">{item.title}</p>
-
-                      <AnimatePresence>
-                        {isSelected && (
-                          <motion.p
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="text-[11px] text-muted-foreground leading-relaxed mb-2 overflow-hidden"
-                          >
-                            {item.summary}
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-muted-foreground">{item.source}</span>
-                          <span className="text-[10px] font-mono text-muted-foreground/50">·</span>
-                          <span className="text-[10px] font-mono text-muted-foreground">{formatRelativeTime(item.published_at)}</span>
-                        </div>
-                        <a
-                          href={item.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                            isBull
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : isBear
+                              ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                              : 'bg-slate-700/30 text-slate-300 border-slate-600/30'
+                          }`}
                         >
-                          <ChevronRight size={10} className={`transition-transform ${isSelected ? "rotate-90" : ""}`} />
-                        </a>
+                          {isBull && <TrendingUp className="w-3 h-3" />}
+                          {isBear && <TrendingDown className="w-3 h-3" />}
+                          {!isBull && !isBear && <Minus className="w-3 h-3" />}
+                          <span className="capitalize">{label}</span>
+                          <span>({(item.sentiment_score * 100).toFixed(0)}%)</span>
+                        </span>
                       </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+
+                      <h3 className="text-xs font-semibold text-white leading-snug line-clamp-2 hover:text-cyan-300">
+                        {item.title}
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {item.summary}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] text-slate-500">
+                      <span>{item.published_at ? new Date(item.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently'}</span>
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+                      >
+                        <span>Read</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                  </motion.div>
+                );
+              })
             )}
           </div>
         </div>
       </div>
-
-      {/* Bottom bar + Chat button */}
-      <div className="h-12 border-t border-border bg-card flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
-          {indicators && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-              <span>{symbol} ${indicators.close.toLocaleString()}</span>
-            </div>
-          )}
-          {indicators && (
-            <div className="flex items-center gap-1.5">
-              <TrendingUp size={11} className={indicators.ema.trend === "bullish" ? "text-primary" : "text-destructive"} />
-              <span className={indicators.ema.trend === "bullish" ? "text-primary" : "text-destructive"}>
-                EMA {indicators.ema.trend} · RSI {indicators.rsi.value.toFixed(1)} ({indicators.rsi.state})
-              </span>
-            </div>
-          )}
-        </div>
-
-        <motion.button
-          onClick={() => setChatOpen(true)}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="flex items-center gap-2.5 px-5 py-2 bg-primary text-primary-foreground rounded-lg font-['Rajdhani'] font-bold text-sm tracking-wider hover:bg-primary/90 transition-all"
-        >
-          <MessageSquare size={15} />
-          OPEN AI CHAT
-          <ChevronRight size={13} />
-        </motion.button>
-      </div>
-
-      <AnimatePresence>
-        {chatOpen && <ChatOverlay onClose={() => setChatOpen(false)} symbol={symbol} />}
-      </AnimatePresence>
     </div>
   );
-}
+};
