@@ -348,10 +348,11 @@ export const marketAPI = {
 
 // ── News API ──────────────────────────────────────────────────────
 export const newsAPI = {
-  // NOTE: no `limit` param -- the backend always returns exactly the
-  // top 5 symbol-relevant headlines, ranked and pre-filtered server-side.
-  async getFeed(symbol?: string): Promise<NewsFeedResponse> {
-    const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+  async getFeed(symbol?: string, limit: number = 20): Promise<NewsFeedResponse> {
+    const params = new URLSearchParams();
+    if (symbol) params.set("symbol", symbol);
+    if (limit) params.set("limit", limit.toString());
+    const qs = params.toString() ? `?${params.toString()}` : "";
     return apiFetch(`/news/feed${qs}`);
   },
 };

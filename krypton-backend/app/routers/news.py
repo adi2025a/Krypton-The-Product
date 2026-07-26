@@ -19,6 +19,7 @@ router = APIRouter()
 @router.get("/feed", response_model=NewsFeedResponse)
 async def get_news_feed(
     symbol: Optional[str] = None,
+    limit: Optional[int] = 20,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -30,7 +31,8 @@ async def get_news_feed(
         symbol = context.symbol if context else "BTCUSDT"
 
     all_news = await fetch_all_news()
-    top_items = rank_news_for_symbol(all_news, symbol, max_results=5)
+    max_count = limit if (limit and limit > 0) else 20
+    top_items = rank_news_for_symbol(all_news, symbol, max_results=max_count)
 
     scored_items = []
     for item in top_items:

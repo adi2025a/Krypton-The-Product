@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  MessageSquare, TrendingUp, Zap, RefreshCw, Bell, Settings, ChevronRight, Activity,
+  MessageSquare, TrendingUp, Zap, RefreshCw, Bell, Settings, ChevronRight, Activity, Newspaper,
 } from "lucide-react";
 import {
   newsAPI, marketAPI, chartContextAPI, statusAPI, llmKeyAPI,
@@ -10,10 +10,9 @@ import {
 import ChatOverlay from "./ChatOverlay";
 
 interface DashboardPageProps {
-  email: string | null; // NOTE: no more llmConfig/binanceConfig -- those held raw
-                          // key material that the backend never gives back out.
-                          // Everything this page needs (LLM provider name, Binance
-                          // connected state) is fetched live below.
+  email: string | null;
+  onNavigateToNews?: () => void;
+  onNavigateToIndicators?: () => void;
 }
 
 // A small curated list for the symbol dropdown -- there's no backend
@@ -56,7 +55,7 @@ function formatRelativeTime(iso: string | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function DashboardPage({ email }: DashboardPageProps) {
+export default function DashboardPage({ email, onNavigateToNews, onNavigateToIndicators }: DashboardPageProps) {
   const [chatOpen, setChatOpen] = useState(false);
 
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -173,9 +172,28 @@ export default function DashboardPage({ email }: DashboardPageProps) {
             <span className="font-['Rajdhani'] text-base font-700 tracking-widest text-foreground uppercase">KRYPTON</span>
           </div>
           <div className="h-4 w-px bg-border" />
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-            <span className="text-xs font-mono text-muted-foreground tracking-wider">LIVE MARKET</span>
+          <div className="flex items-center gap-1 bg-secondary/60 p-0.5 rounded-lg border border-border">
+            <button className="px-3 py-1 text-xs font-mono rounded bg-primary text-primary-foreground font-semibold shadow-sm">
+              Dashboard
+            </button>
+            {onNavigateToNews && (
+              <button
+                onClick={onNavigateToNews}
+                className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-all flex items-center gap-1.5"
+              >
+                <Newspaper size={12} className="text-emerald-400" />
+                <span>News & Sentiment</span>
+              </button>
+            )}
+            {onNavigateToIndicators && (
+              <button
+                onClick={onNavigateToIndicators}
+                className="px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-all flex items-center gap-1.5"
+              >
+                <Activity size={12} className="text-purple-400" />
+                <span>Indicators</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -283,9 +301,19 @@ export default function DashboardPage({ email }: DashboardPageProps) {
         <div className="w-80 xl:w-96 flex flex-col border-border shrink-0">
           <div className="h-9 flex items-center justify-between px-4 border-b border-border shrink-0">
             <span className="text-xs font-['Rajdhani'] font-600 tracking-wider text-foreground uppercase">Live News</span>
-            <button onClick={loadNews} className="text-muted-foreground hover:text-foreground transition-colors">
-              <RefreshCw size={12} className={newsLoading ? "animate-spin" : ""} />
-            </button>
+            <div className="flex items-center gap-2">
+              {onNavigateToNews && (
+                <button
+                  onClick={onNavigateToNews}
+                  className="text-[11px] font-mono text-[#00e5b0] hover:underline font-semibold transition-all flex items-center gap-1"
+                >
+                  View All 20 ↗
+                </button>
+              )}
+              <button onClick={loadNews} className="text-muted-foreground hover:text-foreground transition-colors">
+                <RefreshCw size={12} className={newsLoading ? "animate-spin" : ""} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
